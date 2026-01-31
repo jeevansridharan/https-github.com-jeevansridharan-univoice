@@ -1,0 +1,7 @@
+{
+  "name": "Uni-voice",
+  "description": "A real-time accessibility tool that converts spoken words into high-visibility text using Gemini Live API, helping deaf and hard-of-hearing individuals navigate daily conversations.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
