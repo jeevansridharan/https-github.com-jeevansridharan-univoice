@@ -4,6 +4,8 @@ import { GoogleGenAI, Modality, LiveServerMessage } from '@google/genai';
 import { AppStatus, TranscriptEntry, FontSize } from './types';
 import { createBlob, decode, decodeAudioData } from './utils/audio';
 import TranscriptDisplay from './components/TranscriptDisplay';
+import { useAuth } from './contexts/AuthContext';
+import { supabase } from './lib/supabase';
 
 const FONT_SIZES: { label: string; value: FontSize }[] = [
   { label: 'T1', value: 'text-xl' },
@@ -13,6 +15,7 @@ const FONT_SIZES: { label: string; value: FontSize }[] = [
 ];
 
 const App: React.FC = () => {
+  const { user } = useAuth();
   const [status, setStatus] = useState<AppStatus>(AppStatus.IDLE);
   const [entries, setEntries] = useState<TranscriptEntry[]>([]);
   const [currentText, setCurrentText] = useState<string>('');
@@ -44,7 +47,7 @@ const App: React.FC = () => {
 
   const stopListening = useCallback(() => {
     if (sessionRef.current) {
-      try { sessionRef.current.close?.(); } catch (e) {}
+      try { sessionRef.current.close?.(); } catch (e) { }
       sessionRef.current = null;
     }
     if (scriptProcessorRef.current) {
@@ -56,7 +59,7 @@ const App: React.FC = () => {
       streamRef.current = null;
     }
     if (audioContextRef.current) {
-      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current.close().catch(() => { });
       audioContextRef.current = null;
     }
     setStatus(AppStatus.IDLE);
@@ -90,7 +93,7 @@ const App: React.FC = () => {
             const source = inputCtx.createMediaStreamSource(stream);
             const scriptProcessor = inputCtx.createScriptProcessor(4096, 1, 1);
             scriptProcessorRef.current = scriptProcessor;
-            
+
             scriptProcessor.onaudioprocess = (e) => {
               const inputData = e.inputBuffer.getChannelData(0);
               const pcmBlob = createBlob(inputData);
@@ -112,6 +115,16 @@ const App: React.FC = () => {
               setCurrentText(prev => {
                 const trimmed = prev.trim();
                 if (trimmed) {
+                  // Save to Supabase
+                  if (user) {
+                    supabase.from('transcripts').insert({
+                      user_id: user.id,
+                      content: trimmed
+                    }).then(({ error }) => {
+                      if (error) console.error('Error saving transcript:', error);
+                    });
+                  }
+
                   setEntries(current => [...current, {
                     id: crypto.randomUUID(),
                     text: trimmed,
@@ -172,9 +185,8 @@ const App: React.FC = () => {
             <button
               key={size.value}
               onClick={() => setFontSize(size.value)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                fontSize === size.value ? 'bg-blue-500 text-white shadow-lg' : 'text-gray-400 hover:text-white'
-              }`}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${fontSize === size.value ? 'bg-blue-500 text-white shadow-lg' : 'text-gray-400 hover:text-white'
+                }`}
             >
               {size.label}
             </button>
@@ -186,8 +198,8 @@ const App: React.FC = () => {
       {!hasKey && (
         <div className="mx-6 mt-6 p-4 bg-yellow-500/10 border border-yellow-500/20 rounded-2xl flex items-center justify-between animate-in slide-in-from-top duration-500">
           <div className="flex items-center space-x-3">
-             <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
-             <p className="text-sm font-semibold text-yellow-100">Paid API Key Required for Live API</p>
+            <div className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse" />
+            <p className="text-sm font-semibold text-yellow-100">Paid API Key Required for Live API</p>
           </div>
           <button onClick={handleOpenKeyDialog} className="px-4 py-2 bg-yellow-500 text-black text-xs font-black rounded-xl uppercase">Setup</button>
         </div>
@@ -198,7 +210,7 @@ const App: React.FC = () => {
 
       {/* Bottom Interface */}
       <footer className="px-8 py-10 bg-gradient-to-t from-black via-black/80 to-transparent flex items-center justify-between shrink-0 relative z-10">
-        <button 
+        <button
           onClick={() => setEntries([])}
           className="p-4 rounded-2xl bg-white/5 border border-white/10 text-gray-400 hover:text-white transition-all hover:bg-white/10"
         >
@@ -212,26 +224,26 @@ const App: React.FC = () => {
           disabled={!hasKey && status === AppStatus.IDLE}
           className={`
             relative flex items-center justify-center
-            w-24 h-24 rounded-[32px] transition-all duration-300 transform active:scale-90
-            ${!hasKey && status === AppStatus.IDLE ? 'bg-gray-800 opacity-50 cursor-not-allowed' : 
-              status === AppStatus.LISTENING 
-              ? 'bg-red-500 shadow-[0_0_40px_rgba(239,68,68,0.4)]' 
-              : 'bg-blue-600 shadow-[0_0_40px_rgba(37,99,235,0.3)] hover:scale-105'}
+            w-16 h-16 rounded-full transition-all duration-300 transform active:scale-90
+            ${!hasKey && status === AppStatus.IDLE ? 'bg-gray-800 opacity-50 cursor-not-allowed' :
+              status === AppStatus.LISTENING
+                ? 'bg-red-500 shadow-[0_0_20px_rgba(239,68,68,0.4)]'
+                : 'bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.3)] hover:scale-105'}
           `}
         >
           {status === AppStatus.LISTENING && (
-            <div className="absolute inset-0 rounded-[32px] border-4 border-red-500 animate-ping opacity-30" />
+            <div className="absolute inset-0 rounded-full border-2 border-red-500 animate-ping opacity-30" />
           )}
-          
+
           {status === AppStatus.LISTENING ? (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9 10a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z" />
             </svg>
           ) : status === AppStatus.CONNECTING ? (
-            <div className="h-10 w-10 border-4 border-white border-t-transparent rounded-full animate-spin" />
+            <div className="h-6 w-6 border-2 border-white border-t-transparent rounded-full animate-spin" />
           ) : (
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white" viewBox="0 0 20 20" fill="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6 text-white" viewBox="0 0 20 20" fill="currentColor">
               <path fillRule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm4 10.93A7.001 7.001 0 0017 8a1 1 0 10-2 0A5 5 0 015 8a1 1 0 00-2 0 7.001 7.001 0 006 6.93V17H6a1 1 0 100 2h8a1 1 0 100-2h-3v-2.07z" clipRule="evenodd" />
             </svg>
           )}
@@ -244,14 +256,14 @@ const App: React.FC = () => {
       {status === AppStatus.LISTENING && (
         <div className="absolute bottom-36 left-1/2 -translate-x-1/2 flex items-center space-x-1">
           {[1, 2, 3, 4, 5].map((i) => (
-            <div 
-              key={i} 
-              className="w-1 bg-blue-500 rounded-full animate-pulse" 
-              style={{ 
-                height: `${Math.random() * 20 + 5}px`, 
+            <div
+              key={i}
+              className="w-1 bg-blue-500 rounded-full animate-pulse"
+              style={{
+                height: `${Math.random() * 20 + 5}px`,
                 animationDelay: `${i * 0.1}s`,
                 animationDuration: '0.5s'
-              }} 
+              }}
             />
           ))}
         </div>
